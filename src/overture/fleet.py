@@ -81,6 +81,10 @@ def process(run_dir, tags=None, jobs=4, threads=8, min_free_gb=4.0, log=print):
             bad[(w, t)] = p
         alive = [u for u in alive if u not in bad]
         log(f"{name} done in {time.time() - t0:.0f} s")
+        if not alive:
+            w, t = sorted(bad)[0]
+            raise RuntimeError(f"every window failed in {name}; first log: "
+                               f"{planmod.unit_dir(run_dir, w, t)}/{bad[(w, t)]}.log")
 
     def frame_step(phase):
         f = run_units(run_dir, [("_frame", t, phase) for t in tags], min(len(tags), 2), threads, min_free_gb, log)

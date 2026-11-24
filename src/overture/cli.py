@@ -7,6 +7,10 @@
   overture process DIR                           run every phase of every window
   overture reduce  DIR                           frame products and overlap statistics
   overture status  DIR                           what is done
+
+  overture search      [any seppo_nisar_search option]            find and download granules at ASF
+  overture credentials [any seppo_earthaccess_credentials option] Earthdata token and AWS credentials
+      both hand every option through to openSEPPO unchanged; `overture search -h` lists them
 """
 from __future__ import annotations
 
@@ -104,7 +108,23 @@ def cmd_run(a):
     return 1 if bad else 0
 
 
+SEPPO = {"search": "seppo_nisar_search", "credentials": "seppo_earthaccess_credentials"}
+
+
+def seppo(tool, args):
+    """Hand a command through to openSEPPO with every option unchanged."""
+    import shutil
+    import subprocess
+    exe = shutil.which(SEPPO[tool]) or os.path.join(os.path.dirname(sys.executable), SEPPO[tool])
+    if not os.path.exists(exe):
+        sys.exit(f"{SEPPO[tool]} not found; install openSEPPO (conda-forge: openseppo)")
+    return subprocess.call([exe] + list(args))
+
+
 def main(argv=None):
+    argv = list(sys.argv[1:] if argv is None else argv)
+    if argv and argv[0] in SEPPO:
+        sys.exit(seppo(argv[0], argv[1:]))
     ap = argparse.ArgumentParser(prog="overture", description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--version", action="version", version=__version__)
@@ -114,6 +134,8 @@ def main(argv=None):
     p = sub.add_parser("process"); p.add_argument("run_dir"); _run_args(p); p.set_defaults(f=cmd_process)
     p = sub.add_parser("reduce"); p.add_argument("run_dir"); p.add_argument("--tags", nargs="+"); p.set_defaults(f=cmd_reduce)
     p = sub.add_parser("status"); p.add_argument("run_dir"); p.set_defaults(f=cmd_status)
+    for name, tool in SEPPO.items():
+        sub.add_parser(name, help=f"pass-through to openSEPPO {tool}", add_help=False)
     a = ap.parse_args(argv)
     r = a.f(a)
     sys.exit(r if isinstance(r, int) else 0)

@@ -31,6 +31,8 @@ yamale = "*"
 pyyaml = "*"
 psutil = "*"
 matplotlib-base = "*"
+boto3 = "*"
+curl = "*"
 pip = "*"
 pytest = "*"
 # 3. data access
@@ -38,10 +40,10 @@ openseppo = ">=0.7.1"
 netcdf4 = "*"
 
 [pypi-dependencies]
-# 1. the algorithm. Today: a local checkout beside this one (it carries the float16 and
-#    partial-water fixes that are not upstream yet). Once those are pushed or merged, replace with
-#    dswx-s1 = { git = "https://github.com/opera-adt/DSWX-SAR.git", rev = "<tag>" }
-dswx-s1 = { path = "../DSWX-SAR", editable = true }
+# 1. the algorithm: OPERA dswx_sar (pip name dswx-s1). Pinned to a commit of the fork that
+#    carries the float16, partial-water and GDAL 3.12 fixes; switch to
+#    https://github.com/opera-adt/DSWX-SAR.git once they are merged upstream.
+dswx-s1 = { git = "https://github.com/nicksteiner/DSWX-SAR.git", rev = "f2e1cc31d95a278f9842efeb2d04a507b57cd57d" }
 # 2. this package
 overture = { path = ".", editable = true }
 

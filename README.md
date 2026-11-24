@@ -4,32 +4,243 @@ Run the OPERA DSWx-NI surface-water algorithm on full NISAR L2 GCOV frames by
 overlapping windows, with one threshold field for the whole frame.
 
 A NISAR frame is 0.3 to 1.2 billion pixels and the algorithm needs about five times
-the image in memory. `overture` cuts the frame into windows of about 2 GB each, runs
-the unmodified OPERA code on every window, and puts the window products back on the
-frame grid. Where windows overlap it measures how often they disagree, which is the
-chunking error of the run.
+the image in memory. Overture cuts the frame into windows of about 2 GB each, runs the
+unmodified OPERA code on every window, and puts the window products back on the frame
+grid. Where windows overlap it measures how often they disagree, which is the chunking
+error of the run. Given an event date and a reference date it also writes the flood
+extent.
+
+It sits between two open-source packages and installs both:
+[OPERA DSWx-SAR](https://github.com/opera-adt/DSWX-SAR) is the algorithm, and
+[openSEPPO](https://github.com/EarthBigData/openSEPPO) finds and downloads the data.
+
+Contents: [Requirements](#requirements) · [Install](#install) · [Quick start](#quick-start) ·
+[Step 1: Earthdata login](#step-1-earthdata-login) · [Step 2: find the granules](#step-2-find-the-granules) ·
+[Step 3: download](#step-3-download) · [Step 4: run](#step-4-run) · [Step 5: outputs](#step-5-outputs) ·
+[Options](#options) · [Stopping, resuming, failures](#stopping-resuming-failures) ·
+[Time and memory](#time-and-memory) · [Docker](#docker) · [How it works](#how-it-works) ·
+[Limits](#limits) · [Tests](#tests)
+
+## Requirements
+
+- Linux, x86-64.
+- [pixi](https://pixi.sh) (`curl -fsSL https://pixi.sh/install.sh | sh`) or Docker.
+- 16 GB of memory for one window at a time; 32 GB or more to run several.
+- Disk: 2 GB per 20 m granule (5 to 8 GB at 10 m), about 10 GB of working files per
+  20 m frame and date, and 2 GB for the environment.
+- A free [NASA Earthdata login](https://urs.earthdata.nasa.gov) to download granules.
 
 ## Install
 
-The OPERA algorithm, [`dswx_sar`](https://github.com/opera-adt/DSWX-SAR), must be
-importable, with GDAL, rasterio and h5py. Then:
+    git clone https://github.com/nicksteiner/overture.git
+    cd overture
+    pixi install
+    pixi run test
 
-    pip install -e .          # or put src/ on PYTHONPATH and use `python -m overture`
+`pixi install` builds one environment with OPERA DSWx (pinned to a commit that carries
+fixes needed under GDAL 3.11 and later), overture, and openSEPPO. `pixi run test`
+should report 17 tests passed.
 
-## Use
+Commands below are written as `pixi run overture ...` and are run from the `overture`
+directory. `pixi shell` opens a shell in which plain `overture ...` works from anywhere.
 
-    overture run --h5 wet=<event GCOV .h5> --h5 ref=<reference GCOV .h5> --out <run_dir>
+Without pixi: install GDAL, rasterio, h5py and the other packages listed in
+`pixi.toml`, install OPERA `dswx_sar` at the commit pinned there, then
+`pip install -e .`.
 
-The first `--h5` is the event date, the second the reference. The command plans the
-windows, runs them, and reduces. It can be stopped and started again; finished work is
-skipped. Useful options: `--window-km 96 --overlap-km 10` (use 48 and 6 for 10 m
-frames), `--jobs 4` windows at a time, `--threads 8` per window, `--anc-cache DIR` for
-the downloaded DEM, HAND, WorldCover and surface-water tiles, `--single-pass` to let
-each window fit its own thresholds.
+## Quick start
 
-The steps are also available one at a time: `plan`, `process`, `reduce`, `status`.
+With two GCOV granules of the same track and frame already on disk:
 
-## What a run does
+    pixi run overture run \
+        --h5 wet=/data/event.h5 --h5 ref=/data/reference.h5 \
+        --out /data/runs/my_frame --anc-cache /data/ancillary_cache
+
+The flood map is `/data/runs/my_frame/frame_FLOOD_wet_vs_ref.tif` and the numbers are
+in `frame_report.json`.
+
+## Step 1: Earthdata login
+
+Put your login in `~/.netrc` once, readable only by you:
+
+    echo "machine urs.earthdata.nasa.gov login <user> password <password>" >> ~/.netrc
+    chmod 600 ~/.netrc
+
+## Step 2: find the granules
+
+A flood map needs two granules of the same track, frame and direction: one on the
+event date and one before it. `overture search` is openSEPPO's NISAR search; every one
+of its options is available (`pixi run overture search -h`).
+
+Find what covers a place in a time range:
+
+    pixi run overture search --product GCOV --collection '%' \
+        --point 17.5 12.8 \
+        --start_time_after 2026-09-01 --start_time_before 2026-10-05 \
+        --format csv -o granules.csv
+
+`--point LON LAT` can be replaced by `--bbox MIN_LON MIN_LAT MAX_LON MAX_LAT`,
+`--wkt`, or `--geojson FILE`. `--collection '%'` includes provisional products;
+without it only validated ones are returned.
+
+Read the granule names in `granules.csv`. The name carries what you need:
+
+    NISAR_L2_PR_GCOV_031_173_A_008_2005_DHDH_A_20260930T042609_...
+                     │   │   │ │        │      └ acquisition start
+                     │   │   │ │        └ polarization: DHDH or QPDH carry HH and HV
+                     │   │   │ └ frame
+                     │   │   └ direction: A ascending, D descending
+                     │   └ track
+                     └ cycle (one cycle is 12 days)
+
+Choose an event granule and a reference granule with the same track, direction and
+frame. Both need HH and HV (polarization code starting `DH` or `QP`).
+
+## Step 3: download
+
+The same search with `--download` fetches the files:
+
+    pixi run overture search --product GCOV --collection '%' \
+        --track 173 --frame 8 --direction A \
+        --start_time_after 2026-09-17 --start_time_before 2026-10-01 \
+        --https --download /data/granules
+
+Add `--dryrun` to see the query without logging in, or `--format url --https` to list
+the URLs without downloading.
+
+## Step 4: run
+
+Event date first, reference second. The names `wet` and `ref` are labels of your
+choice and appear in the output file names.
+
+    pixi run overture run \
+        --h5 wet=/data/granules/NISAR_L2_PR_GCOV_031_173_A_008_..._20260930T042609_....h5 \
+        --h5 ref=/data/granules/NISAR_L2_PR_GCOV_030_173_A_008_..._20260918T042609_....h5 \
+        --out /data/runs/chad_173_A_008 \
+        --anc-cache /data/ancillary_cache \
+        --jobs 4 --threads 8
+
+For a 10 m frame add `--window-km 48 --overlap-km 6`. One date alone also works; give
+a single `--h5` and no flood map is written.
+
+On the first run for an area the DEM, HAND, land-cover and surface-water tiles are
+downloaded into `--anc-cache`; later runs reuse them.
+
+The log prints one line per window and phase. To follow a long run, start it with
+`nohup ... > run.log 2>&1 &` and use:
+
+    pixi run overture status /data/runs/chad_173_A_008
+
+## Step 5: outputs
+
+In the run directory:
+
+| file | content |
+|---|---|
+| `frame_WTR_<tag>.tif` | water classification on the frame grid, OPERA WTR classes |
+| `frame_FLOOD_<wet>_vs_<ref>.tif` | 0 not water, 1 water on both dates, 2 flood (water on the event date only), 3 water on the reference date only, 255 not observed on both |
+| `frame_OVERLAP_<tag>.tif` | number of windows that classified each pixel |
+| `frame_DISAGREE_<tag>.tif` | pixels where two windows disagree on water |
+| `frame_report.json` | observed and water area, window disagreement, flood area |
+| `w*/dswx_ni/<tag>/sas_output/` | the OPERA MGRS tiles of each window (WTR, BWTR, CONF) |
+| `w*/dswx_ni/<tag>/state.json` | finished phases, seconds and peak memory per window |
+| `frame_plan.json` | the windows and every setting of the run |
+
+WTR classes counted as water: 1 open water, 2 bright-water fill, 3 inundated
+vegetation, 8 partial surface water. The rasters are in the frame's UTM zone at
+`--output-spacing`.
+
+Check `disagree_frac` in `frame_report.json`: it is the share of overlap pixels on
+which two windows gave different answers. Values of 0.1 to 0.4 % are typical.
+
+## Options
+
+`overture run` and `overture plan`:
+
+| option | meaning | default |
+|---|---|---|
+| `--h5 TAG=PATH` | one GCOV granule per date; first the event, second the reference | required |
+| `--out DIR` | run directory | required |
+| `--window-km` | window size; memory per window scales with its area | 96 |
+| `--overlap-km` | overlap between neighbouring windows | 10 |
+| `--min-valid` | skip windows with less than this fraction inside the swath | 0.02 |
+| `--output-spacing` | product posting in metres | 20 |
+| `--anc-cache DIR` | where downloaded ancillary tiles are kept | inside the run directory |
+| `--algorithm-parameters FILE` | an OPERA algorithm parameter file of your own | the bundled one |
+| `--single-pass` | each window fits its own thresholds; no frame threshold field | off |
+
+`overture run` and `overture process`:
+
+| option | meaning | default |
+|---|---|---|
+| `--jobs` | windows running at the same time | 4 |
+| `--threads` | threads per window | 8 |
+| `--min-free-gb` | start no new window while free memory is below this | 4 |
+| `--tags` | restrict to some dates | all |
+
+Every algorithm setting is OPERA's and lives in the algorithm parameter file: tile
+size and selection, threshold method and bounds, fuzzy-logic weights, region growing,
+land-cover and terrain masks, the bimodality test, inundated vegetation, the
+partial-water count. A copy is written to `<run_dir>/algorithm_parameter_ni.yaml`;
+edit a copy of it and pass it with `--algorithm-parameters`.
+
+Commands:
+
+| command | does |
+|---|---|
+| `overture run ...` | plan, process and reduce |
+| `overture plan ...` | cut the windows and write the plan |
+| `overture process DIR` | run every phase of every window |
+| `overture reduce DIR` | frame products, overlap statistics, flood extent |
+| `overture status DIR` | what is finished and how long it took |
+| `overture search ...` | openSEPPO `seppo_nisar_search`, all options passed through |
+| `overture credentials ...` | openSEPPO `seppo_earthaccess_credentials`, all options passed through |
+
+## Stopping, resuming, failures
+
+A run can be stopped at any time. Run the same command again and finished work is
+skipped: windows already cut, phases already done.
+
+Each window has three phases: `filter`, `threshold`, `classify`. If a window fails,
+the run continues with the others and lists the failure with the path of its log,
+`<run_dir>/<window>/dswx_ni/<tag>/<phase>.log`. Fix the cause and run
+`overture process <run_dir>` then `overture reduce <run_dir>`.
+
+To redo a window from scratch, delete its `dswx_ni/<tag>/` directory contents except
+`runconfig.yaml`, or delete the whole run directory and start again.
+
+## Time and memory
+
+Measured on a 48-core, 64 GB workstation.
+
+| | 20 m frame | 10 m frame |
+|---|---|---|
+| windows per date | 16 of 96 km | about 60 of 48 km |
+| memory per window | 2.4 GB peak | 2.4 GB peak |
+| time per window | 6 to 16 min | 6 to 16 min |
+| both dates, 4 to 5 windows at a time | about 1 h | 3 to 4 h |
+
+Set `--jobs` so that `jobs × threads` is near the number of cores and
+`jobs × 3 GB` fits in memory. On a 16 GB laptop use `--jobs 1 --threads 4`.
+
+## Docker
+
+    docker build -t overture .
+
+The container runs the `overture` command; mount the directory that holds the data
+and run as yourself so the output files are yours:
+
+    docker run --rm -u $(id -u):$(id -g) -v /data:/data overture run \
+        --h5 wet=/data/granules/<event>.h5 --h5 ref=/data/granules/<reference>.h5 \
+        --out /data/runs/my_frame --anc-cache /data/ancillary_cache
+
+To search and download from inside the container, mount the Earthdata login too:
+
+    docker run --rm -u $(id -u):$(id -g) -v $HOME/.netrc:/tmp/.netrc:ro -v /data:/data \
+        overture search --product GCOV --collection '%' --track 173 --frame 8 --direction A \
+        --start_time_after 2026-09-17 --start_time_before 2026-10-01 --https --download /data/granules
+
+## How it works
 
 1. **Plan.** Windows are placed on the frame's pixel grid; windows outside the swath
    are dropped. Each window is written as a GCOV-shaped HDF5 with the same pixels.
@@ -43,24 +254,11 @@ The steps are also available one at a time: `plan`, `process`, `reduce`, `status
    interpolated once with OPERA's own function. The field is cropped into every
    window, so two windows see identical thresholds where they overlap.
 6. **Pass two.** Each window resumes from the fuzzy stage through to MGRS tiles.
-7. **Reduce.** Window tiles are mosaicked on the frame grid.
+7. **Reduce.** Window tiles are mosaicked on the frame grid; overlap disagreement and
+   the flood extent are written.
 
-## Outputs, in the run directory
-
-| file | content |
-|---|---|
-| `frame_WTR_<tag>.tif` | water classification on the frame grid (OPERA WTR classes) |
-| `frame_OVERLAP_<tag>.tif` | number of windows that classified each pixel |
-| `frame_DISAGREE_<tag>.tif` | pixels where two windows disagree on water |
-| `frame_FLOOD_<wet>_vs_<ref>.tif` | 1 water on both dates, 2 flood, 3 water on the reference date only |
-| `frame_report.json` | areas and the window disagreement per date, flood area |
-| `w*/dswx_ni/<tag>/sas_output/` | the OPERA MGRS tiles of each window |
-| `w*/dswx_ni/<tag>/state.json` | finished phases, seconds and peak memory per window |
-
-## How it uses OPERA
-
-`dswx_sar` is a dependency and is not modified. All contact with it is in
-`overture/opera.py`: the stages are called through their `run(cfg)` functions, and
+OPERA `dswx_sar` is a dependency and is not modified. All contact with it is in
+`src/overture/opera.py`: the stages are called through their `run(cfg)` functions, and
 two functions of the threshold stage are replaced at run time, in the window's own
 process, to inject the frame bound and to record the block thresholds.
 
@@ -69,12 +267,26 @@ process, to inject the frame bound and to record the block thresholds.
 - Dual-pol or quad-pol GCOV with HH and HV on frequency A; mixed polarization modes
   are not handled.
 - Windows are cut from granules on disk. Reading windows straight from the archive
-  works in the prototype scripts (openSEPPO) and is not yet in this package.
+  without downloading the granule is not in this package yet.
 - A frame with no tile containing both land and water has no threshold field and the
   run stops with a message.
 - The frame dark-water bound is OPERA's statistic over the whole frame; it can be
   looser than a single window's.
+- In the mosaic the first window that classified a pixel wins.
+- Keep windows much larger than the water bodies in the frame. OPERA's bimodality
+  refinement tests each connected water body against the land around it; a window that
+  is almost all lake gives it no land to compare with and the lake can be removed in
+  that window. With the default 96 km windows this has not occurred; in a test with
+  20 km windows on a 2 500 km² lake two windows disagreed on a quarter of their
+  overlap. The window disagreement in `frame_report.json` shows it when it happens.
 
 ## Tests
 
-    pytest                    # unit tests, synthetic data, under a second
+    pixi run test
+
+Unit tests on synthetic data, under a second. The full path has been run on NISAR
+frames at 20 m.
+
+## License
+
+Apache-2.0. OPERA DSWx-SAR and openSEPPO are separate works under their own licenses.
