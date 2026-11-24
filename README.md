@@ -170,7 +170,7 @@ which two windows gave different answers. Values of 0.1 to 0.4 % are typical.
 
 | option | meaning | default |
 |---|---|---|
-| `--jobs` | windows running at the same time | 4 |
+| `--jobs` | windows running at the same time | cores ÷ threads, limited by free memory at 3 GB per window |
 | `--threads` | threads per window | 8 |
 | `--min-free-gb` | start no new window while free memory is below this | 4 |
 | `--tags` | restrict to some dates | all |

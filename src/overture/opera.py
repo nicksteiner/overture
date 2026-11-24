@@ -30,7 +30,11 @@ def load_cfg(runconfig_path, threads=None):
     if str(pc.polarization_mode).startswith("MIX"):
         raise NotImplementedError(f"polarization mode {pc.polarization_mode} is not supported by overture")
     if threads:
+        # OPERA's parameter file leaves the two long stages on one worker; both accept more
+        # and give the same product (checked pixel for pixel on a 4800 x 4800 window)
         pc.initial_threshold.number_cpu = int(threads)
+        pc.refine_with_bimodality.number_cpu = int(threads)
+        pc.masking_ancillary.number_cpu = int(threads)
     return cfg
 
 

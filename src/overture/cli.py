@@ -42,7 +42,8 @@ def _plan_args(p):
 
 
 def _run_args(p):
-    p.add_argument("--jobs", type=int, default=4, help="windows at a time")
+    p.add_argument("--jobs", type=int, default=0,
+                   help="windows at a time (default: from cores, --threads and free memory)")
     p.add_argument("--threads", type=int, default=8, help="threads per window")
     p.add_argument("--min-free-gb", type=float, default=4.0, help="hold new windows below this much free memory")
     p.add_argument("--tags", nargs="+")
@@ -62,7 +63,8 @@ def cmd_plan(a):
 
 
 def cmd_process(a, run_dir=None):
-    bad = fleet.process(run_dir or a.run_dir, a.tags, a.jobs, a.threads, a.min_free_gb, _log)
+    jobs = a.jobs or fleet.default_jobs(a.threads)
+    bad = fleet.process(run_dir or a.run_dir, a.tags, jobs, a.threads, a.min_free_gb, _log)
     for (w, t), p in sorted(bad.items()):
         _log(f"FAILED {w} {t} in {p}: see {planmod.unit_dir(run_dir or a.run_dir, w, t)}/{p}.log")
     return bad

@@ -19,6 +19,13 @@ def free_gb():
     return float("inf")
 
 
+def default_jobs(threads, gb_per_window=3.0):
+    """Windows at a time that fit the cores and the free memory."""
+    by_cpu = (os.cpu_count() or 1) // max(1, threads)
+    by_mem = int(free_gb() / gb_per_window) if free_gb() != float("inf") else by_cpu
+    return max(1, min(by_cpu, by_mem))
+
+
 def _env(threads):
     env = dict(os.environ, OMP_NUM_THREADS=str(threads), DSWX_MAX_WORKERS=str(threads), PYTHONNOUSERSITE="1")
     env.setdefault("DSWX_USE_GPU", "0")
