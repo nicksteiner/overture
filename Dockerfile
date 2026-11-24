@@ -2,7 +2,7 @@
 #
 #   docker build -t overture .
 #   docker run --rm -u $(id -u):$(id -g) -v /data:/data overture run \
-#       --h5 wet=/data/<event>.h5 --h5 ref=/data/<reference>.h5 --out /data/run --anc-cache /data/ancillary_cache
+#       --h5 20260930=/data/<granule>.h5 --out /data/run --anc-cache /data/ancillary_cache
 #   docker run --rm -u $(id -u):$(id -g) -v $HOME/.netrc:/tmp/.netrc:ro -v /data:/data overture search \
 #       --product GCOV --collection '%' --track 173 --frame 8 --direction A --https --download /data/granules
 FROM ghcr.io/prefix-dev/pixi:0.63.2

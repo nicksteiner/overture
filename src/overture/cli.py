@@ -1,6 +1,6 @@
 """Command line.
 
-  overture run --h5 wet=<gcov.h5> --h5 ref=<gcov.h5> --out <run_dir>
+  overture run --h5 <tag>=<gcov.h5> [--h5 <tag>=<gcov.h5> ...] --out <run_dir>
       plan, process and reduce in one go; safe to re-run, finished work is skipped
 
   overture plan    --h5 TAG=PATH ... --out DIR   cut the windows and write the plan
@@ -29,7 +29,7 @@ def _log(msg):
 
 def _plan_args(p):
     p.add_argument("--h5", action="append", required=True, metavar="TAG=PATH",
-                   help="one GCOV granule per date; the first is the event date, the second the reference")
+                   help="one GCOV granule per date of the same frame; TAG is a label of your choice, e.g. the date")
     p.add_argument("--out", required=True, help="run directory")
     p.add_argument("--window-km", type=float, default=96.0)
     p.add_argument("--overlap-km", type=float, default=10.0)
@@ -72,10 +72,7 @@ def cmd_reduce(a, run_dir=None):
     run_dir = run_dir or a.run_dir
     plan = planmod.load(run_dir)
     tags = getattr(a, "tags", None) or list(plan["tags"])
-    rep = reducemod.reduce(run_dir, tags, _log)
-    if len(tags) >= 2:
-        rep = dict(rep, flood=reducemod.flood(run_dir, tags[0], tags[1], _log))
-    return rep
+    return reducemod.reduce(run_dir, tags, _log)
 
 
 def cmd_status(a):

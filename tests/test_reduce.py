@@ -30,14 +30,3 @@ def test_mosaic_counts_overlap_and_disagreement(gcov_file, tmp_path):
     mosaic, count, disagree = red.mosaic_windows({"w0000": [ta], "w0001": [tb2]}, tr, crs, H, W)
     assert disagree.sum() == 100 * 50 and disagree[100:200, 150:200].all()
     assert (mosaic[100:200, 150:200] == 1).all()                         # first valid window wins
-
-
-def test_flood_classes(tmp_path):
-    wet = np.array([[1, 1, 0, 0, 255, 8]], np.uint8)
-    ref = np.array([[1, 0, 1, 0, 0, 255]], np.uint8)
-    tile(tmp_path / "frame_WTR_wet.tif", 0, 20, wet)
-    tile(tmp_path / "frame_WTR_ref.tif", 0, 20, ref)
-    rep = red.flood(str(tmp_path), "wet", "ref", log=lambda m: None)
-    with rasterio.open(tmp_path / "frame_FLOOD_wet_vs_ref.tif") as d:
-        assert d.read(1).tolist() == [[1, 2, 3, 0, 255, 255]]
-    assert rep["flood_km2"] == 0.0004 * 1 or rep["flood_km2"] == 0.0     # one 20 m pixel rounds to 0.0 km2

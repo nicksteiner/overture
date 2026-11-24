@@ -1,5 +1,5 @@
 """Reduce: window products back onto the frame grid, the chunking error measured where
-windows overlap, and the flood extent between two dates."""
+windows overlap."""
 from __future__ import annotations
 
 import glob
@@ -106,35 +106,3 @@ def reduce(run_dir, tags=None, log=print):
             f"window disagreement {100 * (rep['disagree_frac'] or 0):.2f} %, missing {missing}")
     json.dump(report, open(rpath, "w"), indent=1)
     return report
-
-
-def flood(run_dir, wet, ref, log=print):
-    """frame_FLOOD_<wet>_vs_<ref>.tif: 0 not water, 1 water on both dates, 2 flood (water on the
-    wet date only), 3 water on the reference date only, 255 not observed on both dates."""
-    with rasterio.open(os.path.join(run_dir, f"frame_WTR_{wet}.tif")) as s:
-        a, tr, crs = s.read(1), s.transform, s.crs
-    with rasterio.open(os.path.join(run_dir, f"frame_WTR_{ref}.tif")) as s:
-        b = s.read(1)
-        if s.transform != tr or b.shape != a.shape:
-            b = np.full(a.shape, 255, np.uint8)
-            rasterio.warp.reproject(rasterio.band(s, 1), b, dst_transform=tr, dst_crs=crs, dst_nodata=255,
-                                    resampling=rasterio.warp.Resampling.nearest)
-    both = (a < 250) & (b < 250)
-    wa, wb = np.isin(a, WATER), np.isin(b, WATER)
-    out = np.full(a.shape, 255, np.uint8)
-    out[both] = 0
-    out[both & wa & wb] = 1
-    out[both & wa & ~wb] = 2
-    out[both & ~wa & wb] = 3
-    px_km2 = abs(tr.a * tr.e) / 1e6
-    rep = dict(wet=wet, ref=ref, observed_both_km2=round(float(both.sum() * px_km2), 1),
-               water_both_km2=round(float((out == 1).sum() * px_km2), 1),
-               flood_km2=round(float((out == 2).sum() * px_km2), 1),
-               water_ref_only_km2=round(float((out == 3).sum() * px_km2), 1))
-    _write(os.path.join(run_dir, f"frame_FLOOD_{wet}_vs_{ref}.tif"), out, tr, crs, 255)
-    rpath = os.path.join(run_dir, REPORT)
-    report = json.load(open(rpath)) if os.path.exists(rpath) else {}
-    report[f"flood_{wet}_vs_{ref}"] = rep
-    json.dump(report, open(rpath, "w"), indent=1)
-    log(f"flood {wet} vs {ref}: {rep['flood_km2']:.0f} km2, water on both dates {rep['water_both_km2']:.0f} km2")
-    return rep
