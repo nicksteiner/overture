@@ -1,0 +1,53 @@
+# One environment with the three pieces, in order:
+#   1. OPERA DSWx (dswx_sar)   the algorithm
+#   2. this package             windows, state, frame threshold field, reduce
+#   3. openSEPPO                search and chunked reads from the ASF archive
+#
+#   pixi install
+#   pixi run test
+#   pixi run overture run --h5 wet=<gcov.h5> --h5 ref=<gcov.h5> --out <run_dir>
+[workspace]
+name = "overture"
+channels = ["conda-forge"]
+platforms = ["linux-64"]
+
+[dependencies]
+python = "3.12.*"
+# what OPERA dswx_sar imports
+gdal = ">=3.8"
+rasterio = "*"
+h5py = "*"
+numpy = "*"
+scipy = "*"
+scikit-image = "*"
+py-opencv = "*"
+joblib = "*"
+pyproj = "*"
+shapely = "*"
+geopandas = "*"
+mgrs = "*"
+yamale = "*"
+"ruamel.yaml" = "*"
+pyyaml = "*"
+psutil = "*"
+matplotlib-base = "*"
+pip = "*"
+pytest = "*"
+# 3. data access
+openseppo = ">=0.7.1"
+netcdf4 = "*"
+
+[pypi-dependencies]
+# 1. the algorithm. Today: a local checkout beside this one (it carries the float16 and
+#    partial-water fixes that are not upstream yet). Once those are pushed or merged, replace with
+#    dswx-s1 = { git = "https://github.com/opera-adt/DSWX-SAR.git", rev = "<tag>" }
+dswx-s1 = { path = "../DSWX-SAR", editable = true }
+# 2. this package
+overture = { path = ".", editable = true }
+
+[activation.env]
+# keep packages in ~/.local out of the environment
+PYTHONNOUSERSITE = "1"
+
+[tasks]
+test = "pytest -q"

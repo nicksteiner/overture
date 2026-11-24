@@ -1,0 +1,29 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "overture"
+version = "0.1.0"
+description = "Run OPERA DSWx-NI on full NISAR GCOV frames by overlapping windows, with one threshold field per frame"
+readme = "README.md"
+license = { text = "Apache-2.0" }
+requires-python = ">=3.10"
+authors = [{ name = "Nick Steiner" }]
+dependencies = ["numpy", "h5py", "pyyaml", "rasterio", "gdal"]
+# The algorithm itself, OPERA dswx_sar (github.com/opera-adt/DSWX-SAR), must be importable.
+
+[project.optional-dependencies]
+test = ["pytest"]
+
+[project.scripts]
+overture = "overture.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+overture = ["data/*.yaml"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
