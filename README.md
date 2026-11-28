@@ -16,7 +16,7 @@ It sits between two open-source packages and installs both:
 Contents: [Requirements](#requirements) · [Install](#install) · [Quick start](#quick-start) ·
 [Step 1: Earthdata login](#step-1-earthdata-login) · [Step 2: find the granules](#step-2-find-the-granules) ·
 [Step 3: download](#step-3-download) · [Step 4: run](#step-4-run) · [Step 5: outputs](#step-5-outputs) ·
-[Options](#options) · [Stopping, resuming, failures](#stopping-resuming-failures) ·
+[Running on chips](#running-on-chips) · [Options](#options) · [Stopping, resuming, failures](#stopping-resuming-failures) ·
 [Time and memory](#time-and-memory) · [Docker](#docker) · [How it works](#how-it-works) ·
 [Limits](#limits) · [Tests](#tests)
 
@@ -38,7 +38,7 @@ Contents: [Requirements](#requirements) · [Install](#install) · [Quick start](
 
 `pixi install` builds one environment with OPERA DSWx (pinned to a commit that carries
 fixes needed under GDAL 3.11 and later), overture, and openSEPPO. `pixi run test`
-should report 16 tests passed.
+should report 17 tests passed.
 
 Commands below are written as `pixi run overture ...` and are run from the `overture`
 directory. `pixi shell` opens a shell in which plain `overture ...` works from anywhere.
@@ -150,6 +150,40 @@ vegetation, 8 partial surface water. The rasters are in the frame's UTM zone at
 Check `disagree_frac` in `frame_report.json`: it is the share of overlap pixels on
 which two windows gave different answers. Values of 0.1 to 0.4 % are typical.
 
+## Running on chips
+
+If you hold GeoTIFF chips cut from GCOV frames and not the granules themselves (for
+example one HH and one HV chip per river segment), `overture pack` mosaics them into a
+single GCOV-shaped HDF5 that `overture run` accepts:
+
+    pixi run overture pack \
+        --hh /data/chips/*_20260525T151259_*__HHHH.tif \
+        --like /data/granules/any_granule_of_the_same_mode.h5 \
+        --out /data/packed/20260525.h5 --time 2026-05-25T15:12:59
+
+    pixi run overture run --h5 20260525=/data/packed/20260525.h5 \
+        --out /data/runs/chips_20260525 --anc-cache /data/ancillary_cache \
+        --window-km 48 --overlap-km 6
+
+| option | meaning |
+|---|---|
+| `--hh` | the HH chips: backscatter power in linear units, as in GCOV, in any projection |
+| `--hv` | the HV chips; default is the `--hh` names with `HHHH` replaced by `HVHV` |
+| `--like` | a real GCOV granule of the same mode. It gives the projection and posting of the mosaic and the identification and metadata groups OPERA reads |
+| `--out` | the HDF5 to write |
+| `--time` | acquisition start of the chips; default is that of `--like` |
+| `--bounds` | `XMIN YMIN XMAX YMAX` in the granule's projection; default is the union of the chips |
+
+Pack the chips of one pass together and not one chip at a time. OPERA fits its
+thresholds on tiles that hold both land and water and tests each water body against the
+land around it; a single small chip often has too little of one or the other, and chips
+run separately get separate thresholds that need not agree where they meet.
+
+Pixels outside every chip are no-data and windows with too little data are skipped
+(`--min-valid`). The header of the packed file is the header of `--like` except for the
+bounding polygon, the frequency list and, with `--time`, the acquisition time; orbit
+and frame numbers in the products are therefore those of `--like`.
+
 ## Options
 
 `overture run` and `overture plan`:
@@ -190,6 +224,7 @@ Commands:
 | `overture process DIR` | run every phase of every window |
 | `overture reduce DIR` | frame products and overlap statistics |
 | `overture status DIR` | what is finished and how long it took |
+| `overture pack ...` | pack HH/HV GeoTIFF chips into a GCOV-shaped HDF5 for `overture run` |
 | `overture search ...` | openSEPPO `seppo_nisar_search`, all options passed through |
 | `overture credentials ...` | openSEPPO `seppo_earthaccess_credentials`, all options passed through |
 
@@ -263,7 +298,7 @@ process, to inject the frame bound and to record the block thresholds.
 
 - Dual-pol or quad-pol GCOV with HH and HV on frequency A; mixed polarization modes
   are not handled.
-- Windows are cut from granules on disk. Reading windows straight from the archive
+- Windows are cut from granules on disk, or from chips packed with `overture pack`. Reading windows straight from the archive
   without downloading the granule is not in this package yet.
 - A frame with no tile containing both land and water has no threshold field and the
   run stops with a message.

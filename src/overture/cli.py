@@ -7,6 +7,8 @@
   overture process DIR                           run every phase of every window
   overture reduce  DIR                           frame products and overlap statistics
   overture status  DIR                           what is done
+  overture pack    --hh CHIP.tif ... --like GCOV.h5 --out FAKE.h5
+      pack HH/HV GeoTIFF chips into a GCOV-shaped HDF5 that `overture run` accepts
 
   overture search      [any seppo_nisar_search option]            find and download granules at ASF
   overture credentials [any seppo_earthaccess_credentials option] Earthdata token and AWS credentials
@@ -107,6 +109,15 @@ def cmd_run(a):
     return 1 if bad else 0
 
 
+def cmd_pack(a):
+    from . import chips
+    hv = a.hv or [t.replace("HHHH", "HVHV") for t in a.hh]
+    missing = [t for t in list(a.hh) + list(hv) if not os.path.exists(t)]
+    if missing:
+        sys.exit(f"not found: {missing[0]}" + (f" and {len(missing) - 1} more" if len(missing) > 1 else ""))
+    chips.pack(a.hh, hv, a.like, a.out, a.time, a.bounds, _log)
+
+
 SEPPO = {"search": "seppo_nisar_search", "credentials": "seppo_earthaccess_credentials"}
 
 
@@ -133,6 +144,14 @@ def main(argv=None):
     p = sub.add_parser("process"); p.add_argument("run_dir"); _run_args(p); p.set_defaults(f=cmd_process)
     p = sub.add_parser("reduce"); p.add_argument("run_dir"); p.add_argument("--tags", nargs="+"); p.set_defaults(f=cmd_reduce)
     p = sub.add_parser("status"); p.add_argument("run_dir"); p.set_defaults(f=cmd_status)
+    p = sub.add_parser("pack", help="pack HH/HV GeoTIFF chips into a GCOV-shaped HDF5 for `overture run`")
+    p.add_argument("--hh", nargs="+", required=True, help="HH chips (names containing HHHH)")
+    p.add_argument("--hv", nargs="+", help="HV chips (default: the HH names with HHHH replaced by HVHV)")
+    p.add_argument("--like", required=True, help="a real GCOV granule of the same mode: projection, posting, header")
+    p.add_argument("--out", required=True, help="the HDF5 to write")
+    p.add_argument("--time", help="acquisition start of the chips, YYYY-MM-DDTHH:MM:SS")
+    p.add_argument("--bounds", nargs=4, type=float, metavar=("XMIN", "YMIN", "XMAX", "YMAX"), help="in the granule's projection")
+    p.set_defaults(f=cmd_pack)
     for name, tool in SEPPO.items():
         sub.add_parser(name, help=f"pass-through to openSEPPO {tool}", add_help=False)
     a = ap.parse_args(argv)
